@@ -225,40 +225,6 @@ f_df %>% ggplot(aes(x = pred_fat, y = daily_fat)) + geom_poin
 
 
 
-## Task 2 - 
-
-What are the risk factors associated with the severity of illness from Covid-19 infection? For
-example, profile of patients and lifestyle, social, co-morbidities, genetics, viral strain, etc.
-influencers – how do these affect the probability of requiring hospitalization, ICU, ventilator,
-mortality?
-
-Looking only @ USA Data 
-```{r}
-mobility = fread("RDSC-07-30-Update/apple_mobility_trends/mobility-trends.csv", header=T) %>% 
-  filter(region %in% state.name)
-
-dat_us = dat %>% filter(Country_Region == "US")
-
-world_case_death = fread("RDSC-07-30-Update/worldometer/worldometer-confirmed-cases-and-deaths-by-country-territory-or-conveyance.csv", header=T) %>% filter(country == "USA") # is a single row 
-
-timeseries = fread("RDSC-07-30-Update/coronadatascraper/coronadatascraper-timeseries.csv", header=T) %>% 
-  filter(country == "United States")
-pop_days = fread("RDSC-07-30-Update/ECDC/current-data-on-the-geographic-distribution-of-covid-19-cases-worldwide.csv", header=T) %>% filter(countryterritorycode == "USA")
-
-mobility3 = fread("RDSC-07-30-Update/google_mobility/us-mobility.csv", header=T)
-mobility2_us = fread("RDSC-07-30-Update/descartes_labs/us-mobility-data.csv", header=T)
-
-  # population counts, cases, deaths in US as a whole
-cases_us = fread("RDSC-07-30-Update/USAFacts/confirmed-covid-19-cases-in-us-by-state-and-county.csv", header=T)
-  # cases by state
-deaths_us = fread("RDSC-07-30-Update/USAFacts/confirmed-covid-19-deaths-in-us-by-state-and-county.csv", header=T)
-  # deaths by state
-reduced_care = fread(
-  "Indicators_of_Reduced_Access_to_Care_Due_to_the_Coronavirus_Pandemic_During_Last_4_Weeks.csv", header=T)
-```
-
-
-
 
 
 
