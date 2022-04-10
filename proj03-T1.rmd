@@ -1,6 +1,5 @@
 ---
 title: "Pb Hlth 244 proj 03"
-author: "Adrienne Kwok"
 date: "4/4/2022"
 output: pdf_document
 ---
