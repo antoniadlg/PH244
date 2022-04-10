@@ -1,0 +1,264 @@
+---
+title: "Pb Hlth 244 proj 03"
+author: "Adrienne Kwok"
+date: "4/4/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(ff)
+library(dplyr)
+library(ggplot2)
+library(biglm)
+library(broom)
+```
+
+```{r}
+# grouping timeseries_us by date
+# table of sum of number of cases per date
+cases_bydate = timeseries_us %>% group_by(date) %>%
+  summarise(sum_cases = sum(cases))
+
+deaths_bydate = timeseries_us %>% group_by(date) %>%
+  summarise(sum_deaths = sum(deaths))
+  ## i have no idea why this group_by isn't working
+```
+
+```{r}
+ggplot(subset(cases_bydate, !is.na(sum_cases)), aes(x = date, y = sum_cases)) +
+  geom_line() + 
+  labs(title = "Cases over time",
+       subtitle = "in the US",
+       y = "Cases",
+       x = "Date")
+```
+
+```{r}
+ggplot(subset(deaths_bydate, !is.na(sum_deaths)), aes(x = date, y = sum_deaths)) +
+  geom_line() + 
+  labs(title = "Deaths over time",
+       subtitle = "in the US",
+       y = "Deaths",
+       x = "Date")
+```
+
+```{r}
+# linear regression
+# regressing number of cases on date and state
+## tbh i'm not sure what's the diff btw "cases" and "active"... if only we had a dictionary
+lm_cases = biglm(formula = cases ~ date + state,
+       data = timeseries_us)
+summary(lm_cases)
+```
+
+
+```{r}
+# there are a lot of NAs in "active" column
+lm_activecases = biglm(formula = active ~ date + state,
+       data = timeseries_us)
+summary(lm_activecases)
+```
+
+## Task 1: <p>
+
+Forecast the number of daily cases and deaths: You may choose a cutoff date,
+and use the numbers before that date as the training samples, and the numbers
+after that date as the testing samples. Alternatively, you may choose a subset of
+countries as the training samples, and the rest of countries as the testing samples.
+```{r}
+#Columns to work with: County, Province_State, Population, Weight, Date, Target, Target Value
+dat <- fread(file = "data-proj-3a.csv", header=T)
+
+dat_us = dat %>% filter(Country_Region == "US", Date > "2020-03-15") %>% 
+  filter(TargetValue > 0)
+
+dat_group = dat_us %>% group_by(Province_State, Date, Target) %>% summarize(total_TV = sum(TargetValue),
+                                                                            total_pop = sum(Population) / 2)
+
+  # data grouped by state, including US total
+dat_state = dat_group %>% filter(Province_State != "") # data grouped by state only
+dat_state$total_TV2 = sqrt(dat_state$total_TV) # adding transformed variable
+
+dat_cases = dat_state %>% filter(Target == "ConfirmedCases") 
+dat_cases = dat_cases %>% 
+  filter(total_TV < (quantile(dat_cases$total_TV, .75) - quantile(dat_cases$total_TV, .25))*1.5)
+
+dat_fat = dat_state %>% filter(Target == "Fatalities")
+dat_fat = dat_fat %>% 
+  filter(total_TV < (quantile(dat_fat$total_TV, .75) - quantile(dat_fat$total_TV, .25))*1.5)
+
+#split into test and training by ... date ? First date: 2020/01/23 Last date: 2020/06/10
+#midpoint --> 2020/04/01
+# dat <- dat %>% filter( TargetValue > 100 & TargetValue < 1001) %>% mutate(log_tv = log(TargetValue))
+
+set.seed(244)
+dt_cases <-  sort(sample(nrow(dat_cases), nrow(dat_cases)*.75))
+dt_fat <- sort(sample(nrow(dat_fat), nrow(dat_fat)*.75))
+
+c_train<- dat_cases[dt_cases,] %>% data.frame()
+c_test<- dat_cases[-dt_cases,] %>% data.frame()
+
+f_train<- dat_fat[dt_fat,] %>% data.frame()
+f_test<- dat_fat[-dt_fat,] %>% data.frame()
+
+# c_train <- dat_cases %>% filter(Date < "2020-04-01")
+# c_test <- dat_cases %>% filter(Date >= "2020-04-01")
+# 
+# f_train <- dat_fat %>% filter(Date < "2020-04-01")
+# f_test <- dat_fat %>% filter(Date >= "2020-04-01")
+```
+
+Before going into building models... we should check for linear regression assumptions! 
+- Relationship between X and Y is linear 
+- Observations are independent of one another
+- Normality: For any fixed value of X, Y is normally distributed
+- Homoscedasticity: the variance of the residual is the same for any value X 
+```{r}
+dat %>% filter(Target == "Fatalities") %>% ggplot(aes(x = TargetValue)) + geom_histogram()
+
+# for all countries
+dat %>% filter(Target == "Fatalities") %>% ggplot(aes(x = Date, y = TargetValue)) + 
+  geom_point()
+
+
+# for US
+dat_us %>% filter(Target == "Fatalities") %>% ggplot(aes(x = Date, y = TargetValue)) + 
+  geom_point()
+
+dat_cases %>% ggplot(aes(x = Date, y = TargetValue2)) + 
+  geom_point()
+```
+
+```{r}
+#no population
+# for cases
+lm_state_cases = lm(total_TV2 ~ Date + Province_State ,
+      data = c_train)
+glance(lm_state_cases)
+tidy(lm_state_cases)
+
+# for fatalities
+lm_state_fat = lm(total_TV2 ~ Date + Province_State ,
+      data = f_train)
+glance(lm_state_fat)
+tidy(lm_state_fat)
+```
+
+```{r}
+c_test$pred_case <- predict(lm_state_cases, newdata = c_test)
+c_test$resid <- c_test$total_TV2 - c_test$pred_case
+
+f_test$pred_case <- predict(lm_state_fat, newdata = f_test)
+f_test$resid <- f_test$total_TV2 - f_test$pred_case
+
+#create scatterplot of original data values
+c_test %>% ggplot(aes(x = pred_case, y = total_TV2)) + geom_point() 
+c_test %>% ggplot(aes(x = pred_case, y = resid)) + geom_point() 
+
+f_test %>% ggplot(aes(x = pred_case, y = total_TV2)) + geom_point() 
+f_test %>% ggplot(aes(x = pred_case, y = resid)) + geom_point() 
+
+
+library(MLmetrics)
+RMSE((c_test$pred_case), (c_test$total_TV2))
+#add predicted lines based on quadratic regression model
+```
+
+
+
+
+
+```{r}
+library(ggplot2)
+c_train %>%  ggplot(aes(x = TargetValue)) + geom_histogram()
+c_test %>% ggplot(aes(x =  TargetValue)) + geom_histogram()
+```
+
+```{r}
+library(broom)
+#Let's build 2 linear regression models
+c_lm <- biglm(TargetValue ~ Date + Weight  + factor(Country_Region),
+              data = c_train, weight = Weight )
+f_lm <- biglm(TargetValue ~ Date + Weight  + factor(Country_Region),
+              data = f_train)
+
+tidy(c_lm)  #should we keep Country_Region ?? 
+tidy(f_lm)
+#Use predict to test on the test sets then calculate residuals 
+c_predict <- predict(c_lm, newdata = c_test)
+f_predict <- predict(f_lm, newdata = f_test)
+
+#Calculate residuals between observed and expected 
+c_resid <- c_test$TargetValue - c_predict
+f_resid <- f_test$TargetValue - f_predict
+
+```
+
+
+Let's plot some residuals 
+```{r}
+library(ggplot2)
+c_df <- data.frame(daily_cases = c_test$TargetValue,
+                         pred_cases = c_predict,
+                         case_resid = c_resid)
+
+f_df <- data.frame(daily_fat = f_test$TargetValue,
+                         pred_fat = f_predict,
+                         fat_resid = f_resid)
+
+c_df %>% ggplot(aes(x = pred_cases, y = c_resid)) + 
+  geom_point() + geom_hline(yintercept = 0, linetype = "dotted") + theme_bw()
+
+f_df %>% ggplot(aes(x = pred_fat, y = f_resid)) + 
+  geom_point() + geom_hline(yintercept = 0, linetype = "dotted") + theme_bw()
+  
+#They look weird L O L 
+
+f_df %>% ggplot(aes(x = pred_fat, y = daily_fat)) + geom_poin
+```
+
+
+
+
+
+
+
+## Task 2 - 
+
+What are the risk factors associated with the severity of illness from Covid-19 infection? For
+example, profile of patients and lifestyle, social, co-morbidities, genetics, viral strain, etc.
+influencers – how do these affect the probability of requiring hospitalization, ICU, ventilator,
+mortality?
+
+Looking only @ USA Data 
+```{r}
+mobility = fread("RDSC-07-30-Update/apple_mobility_trends/mobility-trends.csv", header=T) %>% 
+  filter(region %in% state.name)
+
+dat_us = dat %>% filter(Country_Region == "US")
+
+world_case_death = fread("RDSC-07-30-Update/worldometer/worldometer-confirmed-cases-and-deaths-by-country-territory-or-conveyance.csv", header=T) %>% filter(country == "USA") # is a single row 
+
+timeseries = fread("RDSC-07-30-Update/coronadatascraper/coronadatascraper-timeseries.csv", header=T) %>% 
+  filter(country == "United States")
+pop_days = fread("RDSC-07-30-Update/ECDC/current-data-on-the-geographic-distribution-of-covid-19-cases-worldwide.csv", header=T) %>% filter(countryterritorycode == "USA")
+
+mobility3 = fread("RDSC-07-30-Update/google_mobility/us-mobility.csv", header=T)
+mobility2_us = fread("RDSC-07-30-Update/descartes_labs/us-mobility-data.csv", header=T)
+
+  # population counts, cases, deaths in US as a whole
+cases_us = fread("RDSC-07-30-Update/USAFacts/confirmed-covid-19-cases-in-us-by-state-and-county.csv", header=T)
+  # cases by state
+deaths_us = fread("RDSC-07-30-Update/USAFacts/confirmed-covid-19-deaths-in-us-by-state-and-county.csv", header=T)
+  # deaths by state
+reduced_care = fread(
+  "Indicators_of_Reduced_Access_to_Care_Due_to_the_Coronavirus_Pandemic_During_Last_4_Weeks.csv", header=T)
+```
+
+
+
+
+
+
