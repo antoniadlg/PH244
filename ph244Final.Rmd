@@ -7,8 +7,83 @@ output: html_document
 
 
 ```{r}
-train <- read.csv("/Users/antoniadlg/Downloads/train.csv")
-test <- read.csv("/Users/antoniadlg/Downloads/test.csv")
+library(data.table)
+library(dplyr)
+library(ggfortify)
+library(ggplot2)
+```
 
+```{r}
+# reading in data
+traindat_all = fread("bioresponse/train.csv", header=T)
+testdat_all = fread("bioresponse/test.csv", header=T)
+dim(traindat_all)
+dim(testdat_all)
+```
+
+```{r}
+# removing outcome
+traindat = traindat_all %>% select(-c(Activity))
+
+# identifying columns with 0 variance
+which(apply(traindat, 2, var)==0)
+which(apply(testdat, 2, var)==0)
+# dropping columns with 0 variance in train data
+traindat = traindat[ , which(apply(traindat, 2, var) != 0)]
+```
+
+
+```{r}
+pca = prcomp(traindat, center=TRUE, scale.=TRUE)
+summary(pca)
+
+# # https://cran.r-project.org/web/packages/ggfortify/vignettes/plot_pca.html
+# autoplot(pca)
+
+
+# ggplot2 way - w coloring
+dtp <- data.frame('Activity' = traindat_all$Activity, pca$x[,1:2]) # the first two componets are selected (NB: you can also select 3 for 3D plottings or 3+)
+ggplot(data = dtp) + 
+       geom_point(aes(x = PC1, y = PC2, col = Activity)) + 
+       theme_minimal() 
+```
+
+
+```{r}
+#calculate total variance explained by each principal component
+var_explained = pca$sdev^2 / sum(pca$sdev^2)
+
+# scree plot of all principal components
+qplot(c(1:1776), var_explained) + 
+  geom_line() + 
+  xlab("Principal Component") + 
+  ylab("Variance Explained") +
+  ggtitle("Scree Plot") #+
+  # ylim(0, 1)
+
+# scree plot of first 5 principal components
+qplot(c(1:5), var_explained[1:5]) + 
+  geom_line() + 
+  xlab("Principal Component") + 
+  ylab("Variance Explained") +
+  ggtitle("Scree Plot") #+
+  # ylim(0, 1)
+```
+
+```{r, eval=F, include=F}
+sm = 0
+counter = 1
+while (sm < 0.9){
+  sm = sm + var_explained[counter]
+  counter = counter + 1
+}
+
+counter
+var_explained[1:counter] %>% sum()
+```
+
+
+```{r}
+# logistic regression ???
 ```
 
