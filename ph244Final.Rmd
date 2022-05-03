@@ -7,8 +7,8 @@ output: html_document
 
 
 ```{r}
-train <- read.csv("/Users/antoniadlg/Downloads/train.csv")
-test <- read.csv("/Users/antoniadlg/Downloads/test.csv")
+train <- read.csv("train.csv")
+test <- read.csv("test.csv")
 
 ```
 
