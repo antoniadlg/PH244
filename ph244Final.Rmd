@@ -1,0 +1,14 @@
+---
+title: "ph244 Final Project"
+author: "Antonia Gibbs"
+date: "5/3/2022"
+output: html_document
+---
+
+
+```{r}
+train <- read.csv("/Users/antoniadlg/Downloads/train.csv")
+test <- read.csv("/Users/antoniadlg/Downloads/test.csv")
+
+```
+
