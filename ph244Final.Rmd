@@ -6,20 +6,21 @@ output: html_document
 ---
 
 
-```{r}
+```{r Packages and Data}
+library(randomForest)
 library(data.table)
-library(dplyr)
 library(ggfortify)
+library(dplyr)
 library(ggplot2)
+library(tictoc)
+library(datasets)
+library(caret)
+
+#reading in data
+traindat_all = fread("bioresponse/train.csv", header=T)
+testdat = fread("bioresponse/test.csv", header=T)
 ```
 
-```{r}
-# reading in data
-traindat_all = fread("bioresponse/train.csv", header=T)
-testdat_all = fread("bioresponse/test.csv", header=T)
-dim(traindat_all)
-dim(testdat_all)
-```
 
 ```{r}
 # removing outcome
@@ -83,7 +84,39 @@ var_explained[1:counter] %>% sum()
 ```
 
 
-```{r}
-# logistic regression ???
+```{r Logistic Regression}
+# First, take out variables that have multicollinearity 
+
+#CRASHES
+##cor_df <- cor(traindat_all, use = "complete.obs")
+#cor_df[upper.tri(cor_df)] <- 0 
+#diag(cor_df) <- 0
+#train_nocor <- 
+#  traindat_all[, !apply(cor_df, 2, function(x) any(abs(x) > 0.75, na.rm = TRUE))]
+#dim(train_nocor)
+
+#LR model
+tic()
+mod.lr <- glm(Activity ~ ., data = traindat_all, family = "binomial")
+lr_pred <- predict(mod.lr, newdata = testdat, type = "response")
+toc()
+
+head(lr_pred)
 ```
 
+
+```{r Random Forest, eval = F}
+tic()
+mod.rf <- randomForest(Activity~., data=traindat_all, proximity=TRUE, ntree = 100)
+toc()
+print(rf)
+```
+
+```{r Log Loss Metric Function}
+#obtain predicted values (which are probabilities) and compare to actual values (which are binary)
+LogLoss<-function(actual, predicted)
+{
+result<- -1/length(actual)*(sum((actual*log(predicted)+(1-actual)*log(1-predicted))))
+return(result)
+}
+```
