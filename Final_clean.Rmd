@@ -1,0 +1,189 @@
+---
+title: "ph244 Final Project"
+author: "Antonia Gibbs"
+date: "5/3/2022"
+output: html_document
+---
+```{r Packages and data, message = FALSE, warning = FALSE}
+library(randomForest)
+library(data.table)
+library(ggfortify)
+library(dplyr)
+library(ggplot2)
+library(tictoc)
+library(datasets)
+library(caret)
+library(glmnet)
+
+
+# reading in data
+traindat_all = fread("bioresponse/train.csv", header=T)
+#testdat = fread("bioresponse/test.csv", header=T)
+```
+
+```{r Split Train and Test}
+set.seed(244)
+
+data_shuffled <- sort(sample(nrow(traindat_all), nrow(traindat_all)*.75))
+train <- traindat_all[data_shuffled,] %>% data.frame()
+test <- traindat_all[-data_shuffled,] %>% data.frame()
+
+```
+
+
+
+```{r}
+# removing outcome
+train_pca = train %>% select(-c(Activity))
+# identifying columns with 0 variance
+which(apply(train_pca, 2, var)==0)
+which(apply(test, 2, var)==0)
+# dropping columns with 0 variance in train data
+train_pca = train_pca[ , which(apply(train_pca, 2, var) != 0)]
+```
+
+
+```{r PCA}
+pca = prcomp(train_pca, scale.=TRUE)
+summary(pca)
+# # https://cran.r-project.org/web/packages/ggfortify/vignettes/plot_pca.html
+# autoplot(pca)
+# ggplot2 way - w coloring
+dtp <- data.frame('Activity' = train$Activity, pca$x[,1:2]) # the first two components are selected (NB: you can also select 3 for 3D plotting or 3+)
+ggplot(data = dtp) + 
+       geom_point(aes(x = PC1, y = PC2, col = Activity)) + 
+       theme_minimal() 
+```
+
+
+```{r PCA Visuals}
+#calculate total variance explained by each principal component
+var_explained = pca$sdev^2 / sum(pca$sdev^2)
+# scree plot of all principal components
+qplot(c(1:1776), var_explained) + 
+  geom_line() + 
+  xlab("Principal Component") + 
+  ylab("Variance Explained") +
+  ggtitle("Scree Plot") #+
+  # ylim(0, 1)
+# scree plot of first 5 principal components
+qplot(c(1:5), var_explained[1:5]) + 
+  geom_line() + 
+  xlab("Principal Component") + 
+  ylab("Variance Explained") +
+  ggtitle("Scree Plot") #+
+  # ylim(0, 1)
+```
+
+
+```{r, eval=F, include=F}
+sm = 0
+counter = 1
+while (sm < 0.9){
+  sm = sm + var_explained[counter]
+  counter = counter + 1
+}
+counter
+var_explained[1:counter] %>% sum()
+```
+
+
+```{r Log Loss Metric Function}
+
+LogLoss<-function(actual, predicted)
+{
+result<- -1/length(actual)*(sum((actual*log(predicted)+(1-actual)*log(1-predicted))))
+return(result)
+}
+```
+
+
+```{r Logistic Regression with Penalty}
+#Make x a matrix and y a vector for both testing and training
+y_train <- train$Activity
+x_train <- as.matrix(train %>% select(-Activity))
+
+y_test <- test$Activity
+x_test <- as.matrix(test %>% select(-Activity))
+
+#Prediction evaluator function
+Prediction <- function(model)
+{ pred_probs <- model %>% predict(newx = x_test, type = "response")
+  binary_pred <- ifelse(pred_probs > 0.5, 1, 0)
+  histogram(binary_pred)
+  logloss <- LogLoss(y_test, pred_probs)
+  accuracy <- mean(binary_pred == y_test)
+  return(c(logloss, accuracy))
+}
+
+#elastic net
+lr.elastic <- glmnet(y = y_train, x = x_train, alpha = 0.5, family = "binomial", lambda = 0.01)
+
+#ridge regression
+lr.ridge <- glmnet(y = y_train, x = x_train, alpha = 0, family = "binomial", lambda = 0.1)
+
+#lasso 
+lr.lasso <- glmnet(y = y_train, x = x_train, alpha = 1, family = "binomial", lambda = 0.1)
+
+
+Prediction(lr.elastic) #0.545
+Prediction(lr.ridge)   #0.546
+Prediction(lr.lasso)   #0.605
+```
+
+
+```{r Random Forest, eval = F}
+
+mod.rf <- randomForest(Activity~., data=train, proximity=TRUE, ntree = 125)
+pred_rf <- mod.rf %>% predict(newdata = test, type = "response")
+
+#can't do log losse function because it creates a probability of exactly 0 --> log(0) = -Inf
+#LogLoss(y_test, pred_rf)
+mean(y_test == ifelse(pred_rf > 0.5, 1, 0))
+#With 100 trees accuracy is 78%
+#With 125 trees accuracy is 78.78% 
+```
+
+
+```{r}
+##Take out variables that have multicollinearity 
+
+#CRASHES
+##cor_df <- cor(train, use = "complete.obs")
+#cor_df[upper.tri(cor_df)] <- 0 
+#diag(cor_df) <- 0
+#train_nocor <- 
+#  train[, !apply(cor_df, 2, function(x) any(abs(x) > 0.75, na.rm = TRUE))]
+#dim(train_nocor)
+```
+
+
+```{r Support Vector Machine }
+train$Activity <- factor(train$Activity, levels = c(0, 1))
+
+library(e1071)
+ 
+mod.svm <- svm(formula = Activity ~ .,
+                 data = train,
+                 type = 'C-classification', kernel = "linear")
+pred_svm <- mod.svm %>% predict(newdata = test, type = "response")
+
+#confusion matrix
+table(y_test, pred_svm)
+#Accuracy is 73.24% with linear kernel  idk why the mean doesn't work 
+#Accuracy 52.98% with polynomial kernel LOL 
+#Accuracy 65.24% with sigmoid kernel ??? LOL
+mean(pred_svm == y_test)
+
+
+
+#Visualization ????????? 
+#We can also play around with the kernel type 
+```
+
+
+
+
+
+
+
