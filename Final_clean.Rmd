@@ -6,6 +6,7 @@ output: html_document
 ---
 ```{r Packages and data, message = FALSE, warning = FALSE}
 library(randomForest)
+library(randomForestExplainer)
 library(data.table)
 library(ggfortify)
 library(dplyr)
@@ -71,7 +72,7 @@ qplot(c(1:5), var_explained[1:5]) +
   geom_line() + 
   xlab("Principal Component") + 
   ylab("Variance Explained") +
-  ggtitle("Scree Plot") #+
+  ggtitle("Figure 1: Scree Plot of first 5 PC") + theme_bw() + theme(plot.title = element_text(hjust = 0.5))#+
   # ylim(0, 1)
 ```
 
@@ -113,35 +114,47 @@ Prediction <- function(model)
   histogram(binary_pred)
   logloss <- LogLoss(y_test, pred_probs)
   accuracy <- mean(binary_pred == y_test)
-  return(c(logloss, accuracy))
+  return(table(y_test, binary_pred))
 }
 
 #elastic net
 lr.elastic <- glmnet(y = y_train, x = x_train, alpha = 0.5, family = "binomial", lambda = 0.01)
-
 #ridge regression
 lr.ridge <- glmnet(y = y_train, x = x_train, alpha = 0, family = "binomial", lambda = 0.1)
-
 #lasso 
 lr.lasso <- glmnet(y = y_train, x = x_train, alpha = 1, family = "binomial", lambda = 0.1)
 
-
-Prediction(lr.elastic) #0.545
-Prediction(lr.ridge)   #0.546
-Prediction(lr.lasso)   #0.605
 ```
 
 
 ```{r Random Forest, eval = F}
+set.seed(244)
+mod.rf <- randomForest(Activity~., data=train, proximity=TRUE, ntree = 125, localImp = TRUE, nodesize = 1)
+                       #importance = T, maxnodes = 200, nodesize = 1, sampsize = 400)
+pred_rf <- mod.rf %>% predict(newdata = test)
+#save(pred_rf, file = "pred_rf.rda")
+```
 
-mod.rf <- randomForest(Activity~., data=train, proximity=TRUE, ntree = 125)
-pred_rf <- mod.rf %>% predict(newdata = test, type = "response")
+```{r Random Forest Visuals}
+#min_depth_frame <- min_depth_distribution(mod.rf)
+#save(min_depth_frame, file = "min_depth_frame.rda")
+load("pred_rf.rda")
+load("min_depth_frame.rda")
+#head(min_depth_frame, n = 10)
+plot_min_depth_distribution(min_depth_frame, main = "Figure 2: Distribution of Minimal Depth and its Mean from RF Model",
+                            mean_sample = "top_trees") + 
+  theme_bw() + theme(plot.title = element_text(hjust = 0.5))
 
-#can't do log losse function because it creates a probability of exactly 0 --> log(0) = -Inf
-#LogLoss(y_test, pred_rf)
-mean(y_test == ifelse(pred_rf > 0.5, 1, 0))
-#With 100 trees accuracy is 78%
-#With 125 trees accuracy is 78.78% 
+
+#importance_frame <- measure_importance(mod.rf)
+#save(importance_frame, file = "importance_frame.rda")
+load("importance_frame.rda")
+#importance_frame
+plot_multi_way_importance(importance_frame, size_measure = "no_of_nodes", #no_of_labels = 5,
+                          main = "Figure 3: Multi-way Importance Plot of RF Model") + theme_bw() +
+                          theme(plot.title = element_text(hjust = 0.5))
+vars <- important_variables(importance_frame, k = 5, measures = c("mean_min_depth", "no_of_trees"))
+#head(vars)
 ```
 
 
@@ -160,30 +173,40 @@ mean(y_test == ifelse(pred_rf > 0.5, 1, 0))
 
 ```{r Support Vector Machine }
 train$Activity <- factor(train$Activity, levels = c(0, 1))
-
 library(e1071)
- 
 mod.svm <- svm(formula = Activity ~ .,
                  data = train,
                  type = 'C-classification', kernel = "linear")
 pred_svm <- mod.svm %>% predict(newdata = test, type = "response")
 
-#confusion matrix
-table(y_test, pred_svm)
 #Accuracy is 73.24% with linear kernel  idk why the mean doesn't work 
-#Accuracy 52.98% with polynomial kernel LOL 
-#Accuracy 65.24% with sigmoid kernel ??? LOL
-mean(pred_svm == y_test)
+#Visualization 
+#plot(mod.svm, train, formula = Activity ~.)
 
-
-
-#Visualization ????????? 
-#We can also play around with the kernel type 
 ```
 
 
 
 
+```{r Accuracy Precision Recall Function}
+APR <- function(cm, model_name) { 
+  tp <- cm[2,2]
+  fp <- cm[1,2]
+  tn <- cm[1,1]
+  fn <- cm[2,1]
+  acc <- (tp + tn) / (tp + fp + tn + fn)
+  prec <- tp / (tp + fp)     #Precision (TP / TP + FP) or (d/d+b)
+  rec <-  tp / (tp + fn)       #Recall (TP / TP + FN)
+  print(paste0("Classification metrics for ", model_name))
+  print(paste0("Accuracy is ", round(acc, digits = 3)))
+  print(paste0("Precision is ", round(prec, digits = 3)))
+  print(paste0("Recall is ", round(rec, digits = 3)))
+  }
 
+APR(table(y_test, pred_rf), "Random Forest Regression")
+APR(table(y_test, pred_svm), "Support Vector Machine")
+APR(Prediction(lr.elastic), "Elastic Net Regression")
+APR(Prediction(lr.ridge), "Ridge Regression")
+APR(Prediction(lr.lasso), "LASSO Penalty")
 
-
+```
